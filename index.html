@@ -33,7 +33,7 @@
 
     <div class="max-w-4xl mx-auto space-y-4">
         
-        <!-- 遠端查看看板 (會員與櫃檯皆可見) -->
+        <!-- 遠端查看看板 -->
         <div id="statusBanner" class="bg-gradient-to-r from-orange-500 to-orange-400 rounded-3xl p-6 shadow-lg text-white transition-all duration-500">
             <div class="flex justify-between items-center">
                 <div>
@@ -47,7 +47,7 @@
                 </div>
                 <div class="text-right flex flex-col items-end space-y-2">
                     <div id="seatStatusBadge" class="px-4 py-2 rounded-2xl font-bold text-sm bg-white/20 backdrop-blur-md">
-                        系統啟動中 (Starting...)
+                        系統讀取中 (Loading...)
                     </div>
                     <!-- 雲端連線狀態燈 -->
                     <div id="dbStatusBadge"></div>
@@ -133,19 +133,19 @@
                 </h4>
                 <p class="flex items-start">
                     <i class="fas fa-check text-green-500 mt-1 mr-2 text-xs"></i>
-                    <span>座位有限，<strong>先到先得</strong>，不設劃位。<br><span class="text-xs text-gray-400">Seats are limited and available on a first-come, first-served basis. No seat reservations.</span></span>
+                    <span>座位有限，<strong>先到先得</strong>，不設劃位。</span>
                 </p>
                 <p class="flex items-start">
                     <i class="fas fa-check text-green-500 mt-1 mr-2 text-xs"></i>
-                    <span>請於到達 407 室後，使用<strong>櫃檯登記站平板</strong>辦理「登入」。<br><span class="text-xs text-gray-400">Please use the registration tablet at the counter to "Check-in" upon arrival.</span></span>
+                    <span>請於到達 407 室後，使用<strong>櫃檯登記站平板</strong>辦理「登入」。</span>
                 </p>
                 <p class="flex items-start">
                     <i class="fas fa-check text-green-500 mt-1 mr-2 text-xs"></i>
-                    <span>自修室內請保持安靜，嚴禁飲食。<br><span class="text-xs text-gray-400">Please keep quiet. No eating or drinking in the study room.</span></span>
+                    <span>自修室內請保持安靜，嚴禁飲食。</span>
                 </p>
                 <p class="flex items-start">
                     <i class="fas fa-check text-green-500 mt-1 mr-2 text-xs"></i>
-                    <span>離開時，請務必在平板點擊姓名辦理<strong>「登出」</strong>以釋放學位。<br><span class="text-xs text-gray-400">Upon leaving, remember to tap your name on the tablet to "Check-out" and release the seat.</span></span>
+                    <span>離開時，請務必在平板點擊姓名辦理<strong>「登出」</strong>以釋放學位。</span>
                 </p>
             </div>
             
@@ -220,17 +220,37 @@
         </div>
     </div>
 
-    <!-- 系統與 Firebase 整合程式碼 -->
+    <!-- ==========================================
+         ✅ 安全防護層：獨立時鐘系統 (保證時間一定會動)
+         ========================================== -->
+    <script>
+        function updateDateTime() {
+            const now = new Date();
+            const timeString = now.toLocaleString('zh-HK', { 
+                year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+            const mainTime = document.getElementById('currentDateTime');
+            if (mainTime) mainTime.innerText = timeString;
+            
+            const memberTime = document.getElementById('memberClock');
+            if (memberTime) memberTime.innerText = now.toLocaleTimeString('zh-HK', { hour12: false, hour: '2-digit', minute: '2-digit' });
+        }
+        setInterval(updateDateTime, 1000);
+        updateDateTime(); // 立即啟動
+    </script>
+
+    <!-- ==========================================
+         🚀 核心系統與 Firebase 整合
+         ========================================== -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, collection, onSnapshot, addDoc, updateDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // =========================================================================
-        // 🔴🔴🔴 第一步：真實雲端資料庫設定 (Firebase Config) 🔴🔴🔴
+        // 🔴 雲端資料庫設定 (Firebase Config) 🔴
         // =========================================================================
-        // 若要啟用會員「手機遠端即時查看座位」功能，請在此填寫你的 Firebase 專案設定：
-        // Import the functions you need from the SDKs you need
+       // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
@@ -249,22 +269,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
         // =========================================================================
 
-        // --- 1. UI 優先載入機制 (防止畫面卡住) ---
-        function updateDateTime() {
-            const now = new Date();
-            const timeString = now.toLocaleString('zh-HK', { 
-                year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', second: '2-digit'
-            });
-            document.getElementById('currentDateTime').innerText = timeString;
-            document.getElementById('memberClock').innerText = now.toLocaleTimeString('zh-HK', { hour12: false, hour: '2-digit', minute: '2-digit' });
-        }
-        setInterval(updateDateTime, 1000);
-        updateDateTime(); // 立即執行一次
-
         const urlParams = new URLSearchParams(window.location.search);
         let isMemberView = urlParams.get('view') === 'member';
 
-        // 從 LocalStorage 讀取資料 (單機模式主要依賴此處)
+        // 從 LocalStorage 讀取緩存
         let config = JSON.parse(localStorage.getItem('studyRoomConfig') || '{"totalSeats": 6, "isSuspended": false}');
         let logs = JSON.parse(localStorage.getItem('studyRoomLogs') || '[]');
         let user = null;
@@ -276,13 +284,11 @@ const app = initializeApp(firebaseConfig);
             document.getElementById('memberWelcomeCard').classList.remove('hidden');
         }
 
-        // --- 2. 判斷運行模式 (雲端同步模式 vs 單機本地模式) ---
+        // 判斷運行模式
         let firebaseConfig = null;
-        // 嘗試抓取 Sandbox 內建環境變數
         if (typeof __firebase_config !== 'undefined' && __firebase_config) {
             try { firebaseConfig = JSON.parse(__firebase_config); } catch (e) {}
         }
-        // 如果沒有內建，就使用上方手動設定的
         if (!firebaseConfig && manualFirebaseConfig.apiKey) {
             firebaseConfig = manualFirebaseConfig;
         }
@@ -290,17 +296,17 @@ const app = initializeApp(firebaseConfig);
         const isOfflineMode = !firebaseConfig || !firebaseConfig.apiKey;
         const appId = (typeof __app_id !== 'undefined' && __app_id) ? __app_id : 'studyroom407-default';
 
-        // 無論是單機還是雲端，網頁載入時立刻渲染一次 UI
+        // 無論單機或雲端，立即渲染一次 UI
         saveAndRender(); 
 
-        // --- 3. 啟動資料庫 ---
+        // 啟動資料庫
         if (isOfflineMode) {
-            // 單機模式：只使用 localStorage
+            // 單機模式
             const badge = document.getElementById('dbStatusBadge');
             badge.innerHTML = '<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800 shadow-sm border border-yellow-200"><i class="fas fa-exclamation-triangle mr-1.5 text-yellow-600"></i>單機模式 (未連接雲端)</span>';
             badge.title = "目前以單機模式運行，資料僅保存在此設備。若要啟用遠端同步，請在源碼設定 Firebase。";
         } else {
-            // 雲端同步模式：連接 Firebase
+            // 雲端同步模式
             try {
                 const app = initializeApp(firebaseConfig);
                 const auth = getAuth(app);
@@ -323,11 +329,9 @@ const app = initializeApp(firebaseConfig);
                 });
             } catch (err) {
                 console.error("Firebase Init Error:", err);
-                document.getElementById('dbStatusBadge').innerHTML = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">資料庫連線失敗</span>';
+                document.getElementById('dbStatusBadge').innerHTML = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">資料庫連線失敗 (請檢查設定)</span>';
             }
         }
-
-        // --- 4. 核心邏輯 ---
 
         // 監聽雲端資料 (僅雲端模式啟用)
         function startListening() {
@@ -467,7 +471,7 @@ const app = initializeApp(firebaseConfig);
                 nameInput.value = '';
             } catch (err) {
                 console.error(err);
-                showSimpleAlert("系統出錯", "無法登入，請重試。");
+                showSimpleAlert("系統出錯", "無法登入，請檢查網路或重新載入。");
             } finally {
                 regBtn.disabled = false;
                 regBtn.innerText = originalText;
@@ -500,7 +504,7 @@ const app = initializeApp(firebaseConfig);
                             saveAndRender();
                         } catch (err) {
                             console.error(err);
-                            showSimpleAlert("系統出錯", "無法登出，請重試。");
+                            showSimpleAlert("系統出錯", "無法登出，請檢查網路。");
                         }
                     }
                 );
@@ -673,7 +677,6 @@ const app = initializeApp(firebaseConfig);
             document.getElementById('modalMsg').innerText = msg;
             
             const cancelBtn = document.getElementById('modalCancelBtn');
-            // 如果是簡單提示，會被 showSimpleAlert 隱藏，否則顯示取消按鈕
             if (document.getElementById('modalConfirmBtn').innerText !== "知道了 (OK)") {
                 cancelBtn.classList.remove('hidden');
             }
@@ -686,7 +689,7 @@ const app = initializeApp(firebaseConfig);
 
         window.closeModal = function() {
             document.getElementById('modalOverlay').classList.add('hidden');
-            document.getElementById('modalCancelBtn').classList.remove('hidden'); // 重置狀態
+            document.getElementById('modalCancelBtn').classList.remove('hidden'); 
         }
     </script>
 </body>
