@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>自修室 407 入座登記系統 (Study Room 407 Check-in System)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background-color: #f0f2f5;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            touch-action: manipulation;
+        }
+        .card-active { border-left: 8px solid #10b981; }
+        .card-inactive { border-left: 8px solid #9ca3af; opacity: 0.6; }
+        .bg-notebook {
+            background-image: radial-gradient(#d1d5db 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        * { user-select: none; -webkit-tap-highlight-color: transparent; }
+        input { user-select: text; }
+        .scale-up {
+            animation: scaleUp 0.2s ease-out;
+        }
+        @keyframes scaleUp {
+            from { transform: scale(0.95); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-notebook min-h-screen p-4 md:p-6">
+
+    <div class="max-w-4xl mx-auto space-y-4">
+        
+        <!-- 遠端查看看板 (會員與櫃檯皆可見) -->
+        <div id="statusBanner" class="bg-gradient-to-r from-orange-500 to-orange-400 rounded-3xl p-6 shadow-lg text-white transition-all duration-500">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h2 class="text-lg font-bold opacity-90">
+                        <i class="fas fa-eye mr-2"></i>座位狀況 (Seat Status)
+                    </h2>
+                    <div class="flex items-baseline mt-1">
+                        <span id="remainingSeats" class="text-5xl font-black">--</span>
+                        <span class="ml-2 text-xl opacity-80">/ <span id="totalSeatsDisplay">6</span> <span class="text-sm font-semibold">個餘座 (seats available)</span></span>
+                    </div>
+                </div>
+                <div class="text-right flex flex-col items-end space-y-2">
+                    <div id="seatStatusBadge" class="px-4 py-2 rounded-2xl font-bold text-sm bg-white/20 backdrop-blur-md">
+                        讀取快取中 (Loading...)
+                    </div>
+                    <!-- 雲端連線狀態燈 -->
+                    <div id="dbStatusBadge"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 櫃檯管理與登記專用卡片 (會員查詢模式下會隱藏) -->
+        <div id="mainCounterCard" class="bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-200">
+            <!-- 標題與功能鍵 -->
+            <div class="bg-white p-6 border-b border-gray-100 flex justify-between items-center">
+                <div class="flex items-center">
+                    <div class="bg-orange-100 p-3 rounded-2xl mr-4 text-orange-500">
+                        <i class="fas fa-university text-2xl"></i>
+                    </div>
+                    <div>
+                        <h1 id="mainTitle" class="text-xl font-bold text-gray-800 cursor-pointer">美孚中心 407 自修室 (Study Room 407)</h1>
+                        <p id="currentDateTime" class="text-gray-500 text-xs font-medium"></p>
+                    </div>
+                </div>
+                <div class="flex space-x-2">
+                    <button onclick="exportCSV()" class="p-2 text-gray-400 hover:text-orange-500 transition-colors" title="匯出進出記錄 (Export Logs)">
+                        <i class="fas fa-file-csv text-2xl"></i>
+                    </button>
+                    <button onclick="confirmClearAll()" class="p-2 text-gray-400 hover:text-red-500 transition-colors" title="重置系統 (Reset System)">
+                        <i class="fas fa-trash-alt text-xl"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 登入登記區 -->
+            <div id="inputArea" class="p-6 bg-gray-50 border-b border-gray-100">
+                <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">1. 姓名 (Name)</label>
+                        <input type="text" id="memberName" placeholder="輸入中文或英文名..." 
+                            class="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-orange-400 focus:outline-none transition-all text-lg bg-white disabled:bg-gray-100 disabled:cursor-not-allowed">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">2. 人數 (Pax)</label>
+                        <select id="memberPax" class="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-orange-400 focus:outline-none transition-all text-lg bg-white appearance-none disabled:bg-gray-100">
+                            <option value="1">1 位 (1 Person)</option>
+                            <option value="2">2 位 (2 Persons)</option>
+                        </select>
+                    </div>
+                    <div class="flex items-end">
+                        <button onclick="registerEntry()" id="regBtn" class="w-full bg-orange-500 hover:bg-orange-600 text-white h-[52px] rounded-xl font-bold shadow-lg shadow-orange-200 transition-all text-xl">
+                            登入 (Check-in)
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 即時列表 -->
+            <div class="px-6 py-4 flex justify-between items-center bg-white border-b border-gray-50">
+                <span class="text-sm font-bold text-gray-400 uppercase tracking-widest">
+                    <i class="fas fa-history mr-2"></i>即時使用名單 (Current Users)
+                </span>
+                <span class="text-[11px] text-orange-500 bg-orange-50 px-3 py-1 rounded-md font-bold uppercase">
+                    👇 點擊下方卡片辦理登出 (Tap Card to Check-out) 👇
+                </span>
+            </div>
+            
+            <div id="logList" class="p-6 space-y-3 max-h-[500px] overflow-y-auto">
+                <!-- 動態插入 -->
+            </div>
+        </div>
+
+        <!-- 會員唯讀模式顯示的卡片 (會員查詢時看這個) -->
+        <div id="memberWelcomeCard" class="hidden bg-white rounded-3xl p-8 shadow-xl border border-gray-200 text-center space-y-6">
+            <div class="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center mx-auto text-orange-500 text-2xl">
+                <i class="fas fa-graduation-cap"></i>
+            </div>
+            <div>
+                <h3 class="text-xl font-bold text-gray-800">美孚青少年綜合服務中心</h3>
+                <h4 class="text-md font-bold text-gray-500">Meifou Integrated Youth Service Centre</h4>
+                <p class="text-gray-400 text-sm mt-1">歡迎使用 407 自修室 (Welcome to Study Room 407)</p>
+            </div>
+            
+            <div class="bg-gray-50 rounded-2xl p-5 text-left text-sm text-gray-600 space-y-3 border border-gray-100">
+                <h4 class="font-bold text-gray-700 border-b pb-2 mb-2">
+                    <i class="fas fa-info-circle mr-2 text-orange-400"></i>使用守則 (Rules & Regulations)：
+                </h4>
+                <p class="flex items-start">
+                    <i class="fas fa-check text-green-500 mt-1 mr-2 text-xs"></i>
+                    <span>座位有限，<strong>先到先得</strong>，不設劃位。<br><span class="text-xs text-gray-400">Seats are limited and available on a first-come, first-served basis. No seat reservations.</span></span>
+                </p>
+                <p class="flex items-start">
+                    <i class="fas fa-check text-green-500 mt-1 mr-2 text-xs"></i>
+                    <span>請於到達 407 室後，使用<strong>櫃檯登記站平板</strong>辦理「登入」。<br><span class="text-xs text-gray-400">Please use the registration tablet at the counter to "Check-in" upon arrival.</span></span>
+                </p>
+                <p class="flex items-start">
+                    <i class="fas fa-check text-green-500 mt-1 mr-2 text-xs"></i>
+                    <span>自修室內請保持安靜，嚴禁飲食。<br><span class="text-xs text-gray-400">Please keep quiet. No eating or drinking in the study room.</span></span>
+                </p>
+                <p class="flex items-start">
+                    <i class="fas fa-check text-green-500 mt-1 mr-2 text-xs"></i>
+                    <span>離開時，請務必在平板點擊姓名辦理<strong>「登出」</strong>以釋放學位。<br><span class="text-xs text-gray-400">Upon leaving, remember to tap your name on the tablet to "Check-out" and release the seat.</span></span>
+                </p>
+            </div>
+            
+            <p class="text-xs text-gray-400">系統時間 (System Time)：<span id="memberClock">--:--</span></p>
+        </div>
+
+        <!-- 職員隱藏設定 & 查詢連結生成器 -->
+        <div id="staffSettings" class="hidden bg-white rounded-3xl p-6 border border-gray-200 shadow-lg space-y-6 scale-up">
+            <div class="flex justify-between items-start border-b pb-4">
+                <h4 class="text-lg font-bold text-gray-800"><i class="fas fa-cog mr-2 text-gray-400"></i>後台設定 (Staff Settings)</h4>
+                <button onclick="document.getElementById('staffSettings').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times text-xl"></i></button>
+            </div>
+
+            <!-- 暫停開放開關 -->
+            <div class="bg-red-50 p-4 rounded-2xl flex items-center justify-between border border-red-100">
+                <div>
+                    <h5 class="font-bold text-red-700 text-sm">自修室開放狀態 (Room Availability)</h5>
+                    <p class="text-xs text-red-500">切換至「暫停開放」將禁止所有會員登入 (Switch to close check-in)</p>
+                </div>
+                <div class="relative inline-block w-14 h-8">
+                    <input type="checkbox" id="suspendSwitch" class="opacity-0 w-0 h-0 peer" onchange="toggleSuspension()">
+                    <label for="suspendSwitch" class="absolute top-0 left-0 right-0 bottom-0 bg-gray-300 rounded-full cursor-pointer transition-all duration-300 peer-checked:bg-red-500 before:content-[''] before:absolute before:h-6 before:w-6 before:left-1 before:bottom-1 before:bg-white before:rounded-full before:transition-all before:duration-300 peer-checked:before:translate-x-6"></label>
+                </div>
+            </div>
+
+            <!-- 座位容量設定 -->
+            <div>
+                <div class="flex items-center space-x-4">
+                    <label class="text-xs font-bold text-gray-500 uppercase">總座位容量 (Total Capacity)：</label>
+                    <input type="number" id="totalSeatsInput" value="6" class="border rounded-xl px-3 py-2 w-24 text-sm focus:outline-none focus:border-orange-400">
+                    <button onclick="updateSettings()" class="bg-gray-800 text-white text-xs px-4 py-2 rounded-xl font-bold shadow-md active:scale-95 transition-all">更新 (Update)</button>
+                </div>
+            </div>
+
+            <!-- 會員連結生成器 -->
+            <div class="pt-4 border-t">
+                <h4 class="text-sm font-bold text-gray-800 mb-2 flex items-center">
+                    <i class="fas fa-link mr-2 text-orange-400"></i>會員遠端查詢連結 (Bilingual Member Query Link)
+                </h4>
+                <div class="space-y-4">
+                    <p class="text-xs text-gray-500">系統已自動為此連結附帶安全參數（隱藏登入會員名稱與登記區）。請複製此連結發送給會員：</p>
+                    <div class="flex space-x-2">
+                        <input type="text" id="urlInput" readonly class="flex-1 bg-gray-50 border rounded-xl px-3 py-2 text-sm text-gray-600 font-mono focus:outline-none focus:border-orange-400" onclick="this.select()">
+                        <button onclick="copyQueryLink()" class="bg-orange-500 hover:bg-orange-600 text-white text-xs px-4 py-2 rounded-xl font-bold shadow-md active:scale-95 transition-all whitespace-nowrap">
+                            <i class="fas fa-copy mr-1"></i>複製連結 (Copy)
+                        </button>
+                        <button onclick="simulateMemberView()" class="bg-green-500 hover:bg-green-600 text-white text-xs px-4 py-2 rounded-xl font-bold shadow-md active:scale-95 transition-all whitespace-nowrap">
+                            <i class="fas fa-desktop mr-1"></i>預覽 (Preview)
+                        </button>
+                    </div>
+                    <p class="text-[10px] text-gray-400 italic">提示：會員通過點擊複製的連結，只能查看到頂部的「座位狀況」和守則，絕不會看到任何人名，保障安全隱私。註：於目前的測試環境，請直接點擊「預覽」按鈕查看實際效果。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 對話框 -->
+    <div id="modalOverlay" class="fixed inset-0 bg-black/70 hidden z-50 flex items-center justify-center p-6 backdrop-blur-sm">
+        <div class="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl scale-up">
+            <div id="modalIcon" class="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 bg-orange-100 text-orange-500 text-2xl">
+                <i class="fas fa-sign-out-alt"></i>
+            </div>
+            <h3 id="modalTitle" class="text-xl font-bold mb-2 text-gray-800 text-center"></h3>
+            <p id="modalMsg" class="text-gray-500 mb-8 text-center text-sm leading-relaxed"></p>
+            <div class="flex space-x-3" id="modalActions">
+                <button onclick="closeModal()" class="flex-1 py-3 bg-gray-100 rounded-2xl font-bold text-gray-500">
+                    取消 (Cancel)
+                </button>
+                <button id="modalConfirmBtn" class="flex-1 py-3 bg-orange-500 rounded-2xl font-bold text-white shadow-lg">
+                    確認 (Confirm)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase 整合程式碼 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, addDoc, updateDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 安全解析環境中宣告的全域變數，防止 Strict Mode ReferenceError 崩潰
+        const appId = (typeof __app_id !== 'undefined' && __app_id) ? __app_id : 'default-app-id';
+        
+        let firebaseConfig = {};
+        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+            try {
+                firebaseConfig = JSON.parse(__firebase_config);
+            } catch (e) {
+                console.error("Firebase config parse error:", e);
+            }
+        }
+
+        const initialAuthToken = (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) ? __initial_auth_token : null;
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // 判斷是否為會員唯讀模式 (URL 包含 ?view=member)
+        const urlParams = new URLSearchParams(window.location.search);
+        let isMemberView = urlParams.get('view') === 'member';
+
+        // 從 LocalStorage 預先讀取快取數據，防止重整時畫面變空
+        let config = JSON.parse(localStorage.getItem('studyRoomConfig') || '{"totalSeats": 6, "isSuspended": false}');
+        let logs = JSON.parse(localStorage.getItem('studyRoomLogs') || '[]');
+        let user = null;
+        let logsUnsubscribe = null;
+        let configUnsubscribe = null;
+        
+        // 介面初始化控制
+        if (isMemberView) {
+            document.getElementById('mainCounterCard').classList.add('hidden');
+            document.getElementById('memberWelcomeCard').classList.remove('hidden');
+        }
+
+        // 立即進行一次初始快取渲染，確保網頁一載入就看得到原本的名單
+        saveAndRender();
+
+        // 指數退避重試輔助函數
+        async function retryOperation(operation, maxRetries = 5) {
+            let delay = 1000;
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    return await operation();
+                } catch (err) {
+                    if (i === maxRetries - 1) throw err;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2; 
+                }
+            }
+        }
+
+        // 職員後台連點顯示 (唯讀模式下停用)
+        let clickCount = 0;
+        document.getElementById('mainTitle').onclick = () => {
+            if (isMemberView) return; 
+            clickCount++;
+            if (clickCount >= 5) {
+                document.getElementById('staffSettings').classList.toggle('hidden');
+                clickCount = 0;
+                
+                const baseUrl = window.location.href.split('?')[0];
+                document.getElementById('urlInput').value = `${baseUrl}?view=member`;
+                document.getElementById('suspendSwitch').checked = config.isSuspended || false;
+            }
+        };
+
+        // 時鐘更新
+        function updateDateTime() {
+            const now = new Date();
+            const timeString = now.toLocaleString('zh-HK', { 
+                year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+            document.getElementById('currentDateTime').innerText = timeString;
+            document.getElementById('memberClock').innerText = now.toLocaleTimeString('zh-HK', { hour12: false, hour: '2-digit', minute: '2-digit' });
+        }
+        setInterval(updateDateTime, 1000);
+        updateDateTime();
+
+        // 嚴格落實：先連線與驗證 (Auth FIRST) 隨後才啟動監聽與寫入
+        const startApp = async () => {
+            try {
+                if (initialAuthToken) {
+                    try {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } catch (tokenErr) {
+                        console.warn("Custom token auth failed, trying anonymous:", tokenErr);
+                        await signInAnonymously(auth);
+                    }
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (err) {
+                console.error("Firebase Auth Error:", err);
+                document.getElementById('dbStatusBadge').innerHTML = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">連線失敗 (Connection Error)</span>';
+            }
+
+            // 監聽驗證狀態，隨後開始獲取雲端實時更新
+            onAuthStateChanged(auth, (currentUser) => {
+                user = currentUser;
+                if (user) {
+                    document.getElementById('dbStatusBadge').innerHTML = '<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800"><span class="w-2 h-2 mr-1.5 bg-green-500 rounded-full animate-ping"></span>雲端即時連線 (Live Sync)</span>';
+                    startListening();
+                } else {
+                    document.getElementById('dbStatusBadge').innerHTML = '<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800">未連線 (Disconnected)</span>';
+                }
+            });
+        };
+
+        // 啟動應用
+        startApp();
+
+        // 開始監聽雲端資料變化
+        function startListening() {
+            if (!user) return;
+
+            // 【RULE 1 修復】使用平級合規的特定集合名：'config_collection'
+            const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'config_collection', 'status');
+            configUnsubscribe = onSnapshot(configRef, (snapshot) => {
+                if (snapshot.exists()) {
+                    config = snapshot.data();
+                } else {
+                    config = { totalSeats: 6, isSuspended: false };
+                    retryOperation(() => setDoc(configRef, config)).catch(err => console.error("Error setting initial config:", err));
+                }
+                // 同步寫入快取，防止重新整理空白
+                localStorage.setItem('studyRoomConfig', JSON.stringify(config));
+                document.getElementById('totalSeatsInput').value = config.totalSeats;
+                document.getElementById('suspendSwitch').checked = config.isSuspended;
+                calculateSeats();
+            }, (error) => {
+                console.error("Config fetch error:", error);
+            });
+
+            // 【RULE 1 修復】使用平級合規的特定集合名：'logs_collection'
+            const logsRef = collection(db, 'artifacts', appId, 'public', 'data', 'logs_collection');
+            logsUnsubscribe = onSnapshot(logsRef, (snapshot) => {
+                const firebaseLogs = [];
+                snapshot.forEach(docSnap => {
+                    firebaseLogs.push({ id: docSnap.id, ...docSnap.data() });
+                });
+                
+                // 於前端進行排序，完全避免 Firestore 的 index 問題
+                firebaseLogs.sort((a, b) => b.timestamp - a.timestamp);
+                logs = firebaseLogs;
+                
+                // 同步寫入快取，防止重新整理消失
+                localStorage.setItem('studyRoomLogs', JSON.stringify(logs));
+                saveAndRender();
+            }, (error) => {
+                console.error("Logs fetch error:", error);
+            });
+        }
+
+        // 計算餘座狀況
+        function calculateSeats() {
+            const occupied = logs.filter(l => l.status === 'in-use')
+                                 .reduce((sum, log) => sum + parseInt(log.pax), 0);
+            const remaining = config.totalSeats - occupied;
+            
+            const banner = document.getElementById('statusBanner');
+            const display = document.getElementById('remainingSeats');
+            const badge = document.getElementById('seatStatusBadge');
+            const regBtn = document.getElementById('regBtn');
+            const totalDisplay = document.getElementById('totalSeatsDisplay');
+            const nameInput = document.getElementById('memberName');
+            const paxSelect = document.getElementById('memberPax');
+
+            totalDisplay.innerText = config.totalSeats;
+            display.innerText = Math.max(0, remaining);
+
+            if (config.isSuspended) {
+                banner.className = "bg-gradient-to-r from-red-600 to-red-500 rounded-3xl p-6 shadow-lg text-white transition-all duration-500 scale-100";
+                badge.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i> 暫停開放 (Closed)';
+                badge.className = "px-4 py-2 rounded-2xl font-bold text-sm bg-black/20 backdrop-blur-md text-white";
+                if (regBtn) {
+                    regBtn.disabled = true;
+                    regBtn.innerText = "暫停開放 (Closed)";
+                    regBtn.className = "w-full bg-gray-400 text-gray-200 h-[52px] rounded-xl font-bold cursor-not-allowed text-base";
+                }
+                if (nameInput) nameInput.disabled = true;
+                if (paxSelect) paxSelect.disabled = true;
+            } else {
+                banner.className = "bg-gradient-to-r from-orange-500 to-orange-400 rounded-3xl p-6 shadow-lg text-white transition-all duration-500";
+                if (nameInput) nameInput.disabled = false;
+                if (paxSelect) paxSelect.disabled = false;
+                if (regBtn) {
+                    regBtn.innerText = "登入 (Check-in)";
+                    if (remaining <= 0) {
+                        badge.innerHTML = '<i class="fas fa-times-circle mr-1"></i> 目前已滿座 (Full)';
+                        badge.className = "px-4 py-2 rounded-2xl font-bold text-sm bg-red-500 text-white";
+                        regBtn.disabled = true;
+                        regBtn.className = "w-full bg-gray-300 text-gray-500 h-[52px] rounded-xl font-bold cursor-not-allowed text-base";
+                    } else {
+                        badge.innerHTML = '<i class="fas fa-check-circle mr-1"></i> 歡迎登入 (Welcome)';
+                        badge.className = "px-4 py-2 rounded-2xl font-bold text-sm bg-white/20 backdrop-blur-md text-white";
+                        regBtn.disabled = false;
+                        regBtn.className = "w-full bg-orange-500 hover:bg-orange-600 text-white h-[52px] rounded-xl font-bold shadow-lg text-xl";
+                    }
+                }
+            }
+            return remaining;
+        }
+
+        // 註冊登入 (Check-in) 寫入雲端
+        window.registerEntry = async function() {
+            if(config.isSuspended || isMemberView || !user) return; 
+
+            const nameInput = document.getElementById('memberName');
+            const pax = parseInt(document.getElementById('memberPax').value);
+            const remaining = calculateSeats();
+
+            if (!nameInput.value.trim()) {
+                showSimpleAlert("系統提示 / Alert", "請輸入姓名以辦理登入。\nPlease enter your name to check in.");
+                return;
+            }
+
+            if (pax > remaining) {
+                showSimpleAlert("座位不足 / Seats Full", `目前餘座不足以容納 ${pax} 人。\nSorry, remaining seats are not enough for ${pax} people.`);
+                return;
+            }
+
+            const now = new Date();
+            const newEntry = {
+                name: nameInput.value.trim(),
+                pax: pax,
+                entryTime: now.toLocaleTimeString('zh-HK', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+                entryDate: now.toLocaleDateString('zh-HK'),
+                status: 'in-use',
+                exitTime: null,
+                timestamp: Date.now()
+            };
+
+            // 停用按鈕並顯示處理中，防止重複提交
+            const regBtn = document.getElementById('regBtn');
+            const originalText = regBtn.innerText;
+            regBtn.disabled = true;
+            regBtn.innerText = "登記中 (Registering...)";
+
+            try {
+                // 【RULE 1 修復】儲存日誌的合規集合
+                const logsRef = collection(db, 'artifacts', appId, 'public', 'data', 'logs_collection');
+                await retryOperation(() => addDoc(logsRef, newEntry));
+                nameInput.value = '';
+            } catch (err) {
+                console.error("Error writing entry after retries:", err);
+                showSimpleAlert("系統出錯 / Error", `無法登入，請重試。\nUnable to check in, please try again.\n\n(Details: ${err.message || err})`);
+            } finally {
+                regBtn.disabled = false;
+                regBtn.innerText = originalText;
+                calculateSeats();
+            }
+        }
+
+        // 點擊卡片辦理登出 (Check-out) 
+        window.askToggleStatus = function(id) {
+            if (isMemberView || !user) return; 
+            const log = logs.find(l => l.id === id);
+            if (log && log.status === 'in-use') {
+                showConfirmModal(
+                    "辦理登出？ (Check Out?)", 
+                    `確認會員 [${log.name}] 登出並釋放 ${log.pax} 個座位？\nConfirm check-out for [${log.name}] and release ${log.pax} seat(s)?`, 
+                    async () => {
+                        try {
+                            // 【RULE 1 修復】日誌記錄的合規文檔路徑
+                            const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'logs_collection', id);
+                            await retryOperation(() => updateDoc(logRef, {
+                                status: 'returned',
+                                exitTime: new Date().toLocaleTimeString('zh-HK', { hour12: false, hour: '2-digit', minute: '2-digit' })
+                            }));
+                            closeModal();
+                        } catch (err) {
+                            console.error("Error updating log status after retries:", err);
+                            showSimpleAlert("系統出錯 / Error", `無法登出，請重試。\nUnable to check out, please try again.\n\n(Details: ${err.message || err})`);
+                        }
+                    }
+                );
+            }
+        }
+
+        // 渲染列表畫面
+        function saveAndRender() {
+            if (!isMemberView) {
+                const list = document.getElementById('logList');
+                list.innerHTML = '';
+
+                logs.forEach(log => {
+                    const isActive = log.status === 'in-use';
+                    const div = document.createElement('div');
+                    div.className = `${isActive ? 'card-active bg-white scale-up' : 'card-inactive bg-gray-50'} p-4 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center transition-all active:scale-[0.98] ${isActive ? 'cursor-pointer hover:bg-gray-50' : ''}`;
+                    
+                    if(isActive) div.onclick = () => askToggleStatus(log.id);
+                    
+                    div.innerHTML = `
+                        <div class="flex flex-col">
+                            <div class="flex items-center space-x-2 mb-1">
+                                <span class="text-lg font-bold text-gray-800">${log.name}</span>
+                                <span class="text-[10px] bg-orange-100 text-orange-600 px-2 py-0.5 rounded-lg font-black uppercase">
+                                    ${log.pax} ${log.pax > 1 ? 'Pax' : 'Pax'}
+                                </span>
+                            </div>
+                            <div class="text-gray-400 text-xs font-medium">
+                                <i class="far fa-clock mr-1"></i>登入 (In): ${log.entryTime} ${!isActive ? ` | 登出 (Out): ${log.exitTime}` : ''}
+                            </div>
+                        </div>
+                        <div class="${isActive ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-400'} px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider">
+                            ${isActive ? '使用中 (In Use)' : '已登出 (Left)'}
+                        </div>
+                    `;
+                    list.appendChild(div);
+                });
+            }
+            calculateSeats();
+        }
+
+        // 後台修改：暫停開放開關
+        window.toggleSuspension = async function() {
+            if (!user) return;
+            try {
+                // 【RULE 1 修復】合規特定集合
+                const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'config_collection', 'status');
+                config.isSuspended = document.getElementById('suspendSwitch').checked;
+                await retryOperation(() => setDoc(configRef, { isSuspended: config.isSuspended }, { merge: true }));
+            } catch (err) {
+                console.error("Error setting suspension:", err);
+            }
+        }
+
+        // 後台修改：更新座位總數
+        window.updateSettings = async function() {
+            if (!user) return;
+            const val = parseInt(document.getElementById('totalSeatsInput').value);
+            if (val > 0) {
+                try {
+                    // 【RULE 1 修復】合規特定集合
+                    const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'config_collection', 'status');
+                    config.totalSeats = val;
+                    await retryOperation(() => setDoc(configRef, { totalSeats: val }, { merge: true }));
+                    showSimpleAlert("成功 (Success)", "容量已更新。Capacity updated.");
+                } catch (err) {
+                    console.error("Error updating settings:", err);
+                }
+            }
+        }
+
+        // 複製遠端查詢連結 (相容各種平板)
+        window.copyQueryLink = function() {
+            const urlInput = document.getElementById('urlInput');
+            
+            const tempInput = document.createElement('input');
+            tempInput.value = urlInput.value;
+            document.body.appendChild(tempInput);
+            
+            tempInput.select();
+            tempInput.setSelectionRange(0, 99999); 
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showSimpleAlert("複製成功 (Copied)", "查詢連結已成功複製到剪貼簿！您可以直接發送給會員。\nQuery link copied to clipboard successfully!");
+                } else {
+                    showSimpleAlert("複製失敗 (Failed)", "無法自動複製，請手動複製輸入框內的文字。");
+                }
+            } catch (err) {
+                showSimpleAlert("複製失敗 (Failed)", "無法自動複製，請手動複製輸入框內的文字。");
+            }
+            document.body.removeChild(tempInput);
+        }
+
+        // 模擬會員畫面 (針對測試環境設計)
+        window.simulateMemberView = function() {
+            isMemberView = true;
+            document.getElementById('mainCounterCard').classList.add('hidden');
+            document.getElementById('memberWelcomeCard').classList.remove('hidden');
+            document.getElementById('staffSettings').classList.add('hidden');
+            saveAndRender();
+            
+            // 建立退出預覽按鈕
+            const exitBtn = document.createElement('button');
+            exitBtn.id = 'exitPreviewBtn';
+            exitBtn.innerHTML = '<i class="fas fa-sign-out-alt mr-2"></i>退出會員視角 (Exit Preview)';
+            exitBtn.className = 'fixed bottom-6 right-6 bg-gray-800 text-white px-6 py-3 rounded-full shadow-2xl font-bold z-50 hover:bg-gray-700 transition-all scale-up flex items-center';
+            exitBtn.onclick = () => {
+                isMemberView = false;
+                document.getElementById('mainCounterCard').classList.remove('hidden');
+                document.getElementById('memberWelcomeCard').classList.add('hidden');
+                exitBtn.remove();
+                saveAndRender();
+            };
+            document.body.appendChild(exitBtn);
+            
+            showSimpleAlert("進入預覽模式 (Preview Mode)", "現在畫面顯示的，正是會員開啟連結後所看到的畫面！\n\n系統已自動隱藏「會員名單」與「登入區」，會員只能看到剩餘座位與使用守則，確保私隱安全。");
+        }
+
+        // 匯出當前名單至 CSV (包含登入與登出時間紀錄)
+        window.exportCSV = function() {
+            if (logs.length === 0 || isMemberView) {
+                showSimpleAlert("無法匯出 / Cannot Export", "目前沒有任何進出記錄可供匯出。\nThere are no records to export.");
+                return;
+            }
+            
+            // 加上 \uFEFF BOM 檔頭，防止 Windows Excel 開啟中文時出現亂碼
+            let csv = "\uFEFF日期 (Date),姓名 (Name),人數 (Pax),登入時間 (Check-in Time),登出時間 (Check-out Time),狀態 (Status)\n";
+            
+            logs.forEach(l => {
+                const checkOutTime = l.exitTime ? l.exitTime : '--:--';
+                const statusText = l.status === 'in-use' ? '使用中 (In Use)' : '已登出 (Checked Out)';
+                csv += `${l.entryDate},${l.name},${l.pax},${l.entryTime},${checkOutTime},${statusText}\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            
+            // 檔案名稱加上當前日期
+            const dateStr = new Date().toLocaleDateString('zh-HK').replace(/\//g, '-');
+            link.download = `自修室407_進出記錄_${dateStr}.csv`;
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // 清空重置今日資料 (雲端批次安全清理)
+        window.confirmClearAll = function() {
+            if (isMemberView) return;
+            showConfirmModal("重置系統？ (Reset System?)", "清除雲端所有記錄。請確認已匯出 CSV。\nClear all records for today. Please make sure you have exported CSV first.", async () => {
+                if (logs.length === 0) {
+                    closeModal();
+                    return;
+                }
+                try {
+                    const batch = writeBatch(db);
+                    logs.forEach(log => {
+                        // 【RULE 1 修復】合規特定集合
+                        const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'logs_collection', log.id);
+                        batch.delete(logRef);
+                    });
+                    await retryOperation(() => batch.commit());
+                    closeModal();
+                    showSimpleAlert("成功 (Success)", "所有記錄已被清除。");
+                } catch (err) {
+                    console.error("Reset Error:", err);
+                    showSimpleAlert("錯誤 (Error)", `無法清除雲端資料，請稍後重試。\n(Details: ${err.message || err})`);
+                }
+            });
+        }
+
+        // 自訂雙語彈窗機制
+        window.showSimpleAlert = function(title, msg) {
+            showConfirmModal(title, msg, closeModal);
+            document.getElementById('modalConfirmBtn').innerText = "知道了 (OK)";
+        }
+
+        window.showConfirmModal = function(title, msg, onConfirm) {
+            document.getElementById('modalTitle').innerText = title;
+            document.getElementById('modalMsg').innerText = msg;
+            const bgBtn = document.getElementById('modalConfirmBtn');
+            bgBtn.onclick = onConfirm;
+            bgBtn.innerText = "確認 (Confirm)";
+            document.getElementById('modalOverlay').classList.remove('hidden');
+        }
+
+        window.closeModal = function() {
+            document.getElementById('modalOverlay').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
