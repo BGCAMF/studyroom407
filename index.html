@@ -250,23 +250,15 @@
         // =========================================================================
         // 🔴 雲端資料庫設定 (Firebase Config) 🔴
         // =========================================================================
-       // Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyAOJXyHxgnrcM0BAi_ND4H6nl18YEAeey4",
-  authDomain: "studyroom407.firebaseapp.com",
-  projectId: "studyroom407",
-  storageBucket: "studyroom407.firebasestorage.app",
-  messagingSenderId: "492177023564",
-  appId: "1:492177023564:web:dbfd5d28fc030331104ae9"
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+        // 🚨 注意：請確保引號 "" 和結尾的逗號 , 不要被刪除！
+        const manualFirebaseConfig = {
+            apiKey: "AIzaSyAOJXyHxgnrcM0BAi_ND4H6nl18YEAeey4",
+            authDomain: "studyroom407.firebaseapp.com",
+            projectId: "studyroom407",
+            storageBucket: "studyroom407.firebasestorage.app",
+            messagingSenderId: "492177023564",
+            appId: "1:492177023564:web:dbfd5d28fc030331104ae9"
+        };
         // =========================================================================
 
         const urlParams = new URLSearchParams(window.location.search);
