@@ -230,14 +230,23 @@
         // 🔴🔴🔴 第一步：真實雲端資料庫設定 (Firebase Config) 🔴🔴🔴
         // =========================================================================
         // 若要啟用會員「手機遠端即時查看座位」功能，請在此填寫你的 Firebase 專案設定：
-        const manualFirebaseConfig = {
-            // apiKey: "在此貼上你的 apiKey",
-            // authDomain: "在此貼上你的 authDomain",
-            // projectId: "在此貼上你的 projectId",
-            // storageBucket: "在此貼上你的 storageBucket",
-            // messagingSenderId: "在此貼上你的 messagingSenderId",
-            // appId: "在此貼上你的 appId"
-        };
+        // Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyAOJXyHxgnrcM0BAi_ND4H6nl18YEAeey4",
+  authDomain: "studyroom407.firebaseapp.com",
+  projectId: "studyroom407",
+  storageBucket: "studyroom407.firebasestorage.app",
+  messagingSenderId: "492177023564",
+  appId: "1:492177023564:web:dbfd5d28fc030331104ae9"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
         // =========================================================================
 
         // --- 1. UI 優先載入機制 (防止畫面卡住) ---
